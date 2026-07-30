@@ -149,17 +149,24 @@ loginBtn.addEventListener('click', doLogin);
   el.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 });
 
+const VALID_USERS = {
+  'lynda': 'Coco',
+  'kelly': 'Coco',
+  'suba': 'Coco'
+};
+
 function doLogin(){
   const u = document.getElementById('li-user').value.trim();
   const p = document.getElementById('li-pass').value;
   const name = document.getElementById('li-name').value.trim();
-  if(u === 'suba' && p === 'suba' && name){
+  const validPass = VALID_USERS[u.toLowerCase()];
+  if(validPass && p === validPass && name){
     currentUser = name;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('who-name').textContent = name;
     boot();
-  } else if(u === 'suba' && p === 'suba' && !name){
+  } else if(validPass && p === validPass && !name){
     loginErr.textContent = 'Please enter your name so your comments can be identified.';
     loginErr.style.display = 'block';
   } else {

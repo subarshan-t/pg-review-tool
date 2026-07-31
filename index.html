@@ -86,10 +86,6 @@
       <label for="li-pass">Password</label>
       <input id="li-pass" type="password" autocomplete="current-password">
     </div>
-    <div class="field">
-      <label for="li-name">Your name <span style="font-weight:400;color:#6C6879">(shown on your comments)</span></label>
-      <input id="li-name" type="text" placeholder="e.g. Lynda Schenk">
-    </div>
     <button class="btn-primary" id="login-btn">Sign in</button>
   </div>
 </div>
@@ -145,7 +141,7 @@ let iframeReady = false;
 const loginBtn = document.getElementById('login-btn');
 const loginErr = document.getElementById('login-error');
 loginBtn.addEventListener('click', doLogin);
-[document.getElementById('li-user'),document.getElementById('li-pass'),document.getElementById('li-name')].forEach(el=>{
+[document.getElementById('li-user'),document.getElementById('li-pass')].forEach(el=>{
   el.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 });
 
@@ -155,20 +151,27 @@ const VALID_USERS = {
   'suba': 'Coco'
 };
 
+const SESSION_KEY = 'pg-review-session-user';
+
+function displayNameFor(username){
+  return username.charAt(0).toUpperCase() + username.slice(1).toLowerCase();
+}
+
+function enterApp(username){
+  currentUser = displayNameFor(username);
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('who-name').textContent = currentUser;
+  boot();
+}
+
 function doLogin(){
   const u = document.getElementById('li-user').value.trim();
   const p = document.getElementById('li-pass').value;
-  const name = document.getElementById('li-name').value.trim();
   const validPass = VALID_USERS[u.toLowerCase()];
-  if(validPass && p === validPass && name){
-    currentUser = name;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
-    document.getElementById('who-name').textContent = name;
-    boot();
-  } else if(validPass && p === validPass && !name){
-    loginErr.textContent = 'Please enter your name so your comments can be identified.';
-    loginErr.style.display = 'block';
+  if(validPass && p === validPass){
+    localStorage.setItem(SESSION_KEY, u.toLowerCase());
+    enterApp(u.toLowerCase());
   } else {
     loginErr.textContent = "That username or password isn't right.";
     loginErr.style.display = 'block';
@@ -176,16 +179,31 @@ function doLogin(){
 }
 
 document.getElementById('logout-btn').addEventListener('click', ()=>{
+  localStorage.removeItem(SESSION_KEY);
   location.reload();
 });
+
+(function tryRestoreSession(){
+  const saved = localStorage.getItem(SESSION_KEY);
+  if(saved && VALID_USERS[saved]){
+    enterApp(saved);
+  }
+})();
+
+let commentsPollTimer = null;
 
 function boot(){
   const frame = document.getElementById('doc-frame');
   frame.srcdoc = DOC_HTML;
   loadComments();
+  if(commentsPollTimer) clearInterval(commentsPollTimer);
+  commentsPollTimer = setInterval(loadComments, 5000);
 }
 
+let knownCommentIds = new Set();
+
 async function loadComments(){
+  const prevIds = knownCommentIds;
   try{
     const r = await fetch('/api/comments');
     const data = await r.json().catch(()=>({}));
@@ -199,14 +217,20 @@ async function loadComments(){
     showBanner("Comments couldn't be loaded: " + e.message);
   }
   renderSidebar();
-  if(iframeReady) restoreAllHighlights();
+  knownCommentIds = new Set(comments.map(c=>c.id));
+  if(iframeReady) restoreHighlights(prevIds);
 }
 
-function restoreAllHighlights(){
+function restoreHighlights(prevIds){
   const frame = document.getElementById('doc-frame');
   if(!frame.contentWindow) return;
+  const removedIds = [...prevIds].filter(id=>!knownCommentIds.has(id));
+  removedIds.forEach(id=>{
+    frame.contentWindow.postMessage({type:'pg-remove-highlight', id}, '*');
+  });
   const ordered = [...comments].sort((a,b)=>a.ts-b.ts);
   ordered.forEach(c=>{
+    if(prevIds.has(c.id)) return;
     frame.contentWindow.postMessage({type:'pg-restore-highlight', id:c.id, text:c.quote, occurrenceIndex:c.occurrenceIndex||0}, '*');
   });
 }
@@ -368,7 +392,7 @@ window.addEventListener('message', (e)=>{
 
   if(d.type === 'pg-iframe-ready'){
     iframeReady = true;
-    restoreAllHighlights();
+    restoreHighlights(new Set());
   }
   if(d.type === 'pg-new-comment'){
     pendingNew = {id:d.id, text:d.text, tab:d.tab, occurrenceIndex:d.occurrenceIndex};
